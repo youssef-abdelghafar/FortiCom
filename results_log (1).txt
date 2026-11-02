@@ -1,0 +1,108 @@
+test seeds: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]  | parallel jobs: 2
+
+### T1: cryptographic primitives (pure operation, 100-byte message, one core)
+| primitive | sizes | sign / encrypt / encapsulate (us) | verify / decrypt / decapsulate (us) |
+|---|---|---|---|
+| HMAC-SHA256 | 32 B tag | 1.7 | 1.6 |
+| Ed25519 | sig 64 B, pub 32 B | 60.6 | 121.4 |
+| ML-DSA-65 (post-quantum) | sig 3309 B, pub 1952 B | 1101.2 | 188.4 |
+| AES-256-GCM | +16 B tag, +12 B nonce | 0.6 | 0.6 |
+| ML-KEM-768 (post-quantum key exchange) | ct 1088 B, pub 1184 B | 24.0 | 36.4 |
+| X25519 (classical key exchange) | pub 32 B | 38.2 | 38.8 |
+
+### T1b: protection modes on clean traffic (receiver side, statistical layers on, AI off)
+| mode | bytes / message on the wire | receiver us / message | receiver peak memory KB | handshake bytes (5 sensors) | false-alarm rate |
+|---|---|---|---|---|---|
+| none | 63 | 50 | 1525 | 0 | 0.0003 |
+| hmac | 116 | 70 | 1324 | 0 | 0.0003 |
+| ed25519 | 160 | 237 | 1323 | 0 | 0.0003 |
+| ed25519+gcm | 228 | 222 | 1323 | 480 | 0.0003 |
+| mldsa65 | 4484 | 296 | 1323 | 0 | 0.0003 |
+| mldsa65+gcm | 4552 | 393 | 1323 | 22145 | 0.0003 |
+
+### T2: man-in-the-middle recall - signature check ONLY, per mode (last column: ed25519 + timestamp + sequence number, statistics off)
+| attack | none | hmac | ed25519 | ed25519+gcm | mldsa65 | mldsa65+gcm | ed25519 + fresh + replay |
+|---|---|---|---|---|---|---|---|
+| mitm_tamper | 0.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 |
+| mitm_replay | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 1.00±0.00 |
+| mitm_forge | 0.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 |
+
+### T3: full pipeline (ed25519, all layers incl. AI), test seeds, mean ± 95% CI
+| attack | class | split | recall | precision | false-alarm rate | median latency steps (detected runs) | bad messages accepted (mean) |
+|---|---|---|---|---|---|---|---|
+| bias | compromised sensor | dev | 0.99±0.00 | 1.00±0.00 | 0.0005±0.0004 | 0 (10/10 runs) | 2 |
+| drift | compromised sensor | dev | 0.89±0.01 | 1.00±0.00 | 0.0004±0.0004 | 32 (10/10 runs) | 33 |
+| spike | compromised sensor | dev | 1.00±0.00 | 0.92±0.08 | 0.0006±0.0007 | 0 (10/10 runs) | 0 |
+| freeze | compromised sensor | dev | 0.99±0.00 | 1.00±0.00 | 0.0005±0.0004 | 3 (10/10 runs) | 4 |
+| stale_replay | compromised sensor | held-out | 0.95±0.01 | 0.99±0.00 | 0.0006±0.0004 | 0 (10/10 runs) | 16 |
+| slow_bias | compromised sensor | held-out | 0.84±0.07 | 1.00±0.01 | 0.0004±0.0004 | 11 (10/10 runs) | 48 |
+| evasion | compromised sensor | held-out | 0.06±0.07 | 0.59±0.48 | 0.0003±0.0004 | 151 (3/10 runs) | 281 |
+| noise | compromised sensor | held-out | 0.31±0.05 | 0.99±0.01 | 0.0004±0.0004 | 1 (10/10 runs) | 206 |
+| sawtooth | compromised sensor | held-out | 0.89±0.02 | 1.00±0.00 | 0.0004±0.0004 | 21 (10/10 runs) | 32 |
+| zero_fault | compromised sensor | held-out | 1.00±0.00 | 1.00±0.00 | 0.0005±0.0004 | 0 (10/10 runs) | 0 |
+| mitm_tamper | man-in-the-middle | channel | 1.00±0.00 | 0.98±0.02 | 0.0003±0.0004 | 0 (10/10 runs) | 0 |
+| mitm_replay | man-in-the-middle | channel | 1.00±0.00 | 0.98±0.02 | 0.0003±0.0004 | 0 (10/10 runs) | 0 |
+| mitm_forge | man-in-the-middle | channel | 1.00±0.00 | 0.98±0.02 | 0.0003±0.0004 | 0 (10/10 runs) | 0 |
+
+### T4: ablation - recall when ONE layer is removed (mode none: crypto cannot help here)
+| attack | all layers | no range | no rate | no freeze | no neighbor | no cusum | no ai |
+|---|---|---|---|---|---|---|---|
+| bias | 0.99±0.00 | 0.99±0.00 | 0.99±0.00 | 0.99±0.00 | 1.00±0.00 | 0.98±0.01 | 0.99±0.00 |
+| drift | 0.89±0.01 | 0.89±0.01 | 0.89±0.01 | 0.89±0.01 | 0.89±0.01 | 0.76±0.03 | 0.89±0.01 |
+| spike | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 |
+| freeze | 0.99±0.00 | 0.99±0.00 | 0.99±0.00 | 0.99±0.00 | 0.99±0.00 | 0.99±0.00 | 0.98±0.01 |
+| stale_replay | 0.94±0.01 | 0.94±0.01 | 0.94±0.01 | 0.94±0.01 | 1.00±0.00 | 0.86±0.02 | 0.94±0.01 |
+| slow_bias | 0.85±0.09 | 0.85±0.09 | 0.85±0.09 | 0.85±0.09 | 0.86±0.08 | 0.00±0.00 | 0.85±0.09 |
+| evasion | 0.06±0.08 | 0.06±0.08 | 0.06±0.08 | 0.06±0.08 | 0.06±0.08 | 0.00±0.00 | 0.06±0.08 |
+| noise | 0.34±0.07 | 0.34±0.07 | 0.34±0.07 | 0.34±0.07 | 0.71±0.15 | 0.26±0.04 | 0.32±0.07 |
+| sawtooth | 0.89±0.02 | 0.89±0.02 | 0.89±0.02 | 0.89±0.02 | 0.89±0.02 | 0.04±0.02 | 0.89±0.02 |
+| zero_fault | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 |
+
+### T4b: each layer ALONE - recall (shows what each layer contributes by itself)
+| attack | only range | only rate | only freeze | only neighbor | only cusum | only ai |
+|---|---|---|---|---|---|---|
+| bias | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.98±0.02 | 1.00±0.00 | 0.99±0.00 |
+| drift | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.66±0.02 | 0.89±0.01 | 0.77±0.01 |
+| spike | 0.00±0.00 | 0.87±0.15 | 0.00±0.00 | 1.00±0.00 | 0.28±0.17 | 1.00±0.00 |
+| freeze | 0.00±0.00 | 0.00±0.00 | 0.97±0.00 | 0.75±0.06 | 0.94±0.02 | 0.99±0.00 |
+| stale_replay | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.86±0.02 | 0.97±0.00 | 0.99±0.02 |
+| slow_bias | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.86±0.08 | 0.00±0.00 |
+| evasion | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.06±0.08 | 0.00±0.00 |
+| noise | 0.00±0.00 | 0.03±0.00 | 0.00±0.00 | 0.24±0.04 | 0.44±0.09 | 0.58±0.18 |
+| sawtooth | 0.00±0.00 | 0.00±0.00 | 0.00±0.00 | 0.03±0.01 | 0.89±0.02 | 0.04±0.04 |
+| zero_fault | 1.00±0.00 | 0.01±0.00 | 0.97±0.00 | 1.00±0.00 | 1.00±0.00 | 1.00±0.00 |
+
+### T5: statistics vs AI models - recall (AI-only rows switch every statistical layer off)
+| attack | statistics only | Isolation Forest only | Autoencoder only | statistics + Autoencoder |
+|---|---|---|---|---|
+| bias | 0.99±0.00 | 0.04±0.03 | 0.99±0.00 | 0.99±0.00 |
+| drift | 0.89±0.01 | 0.02±0.03 | 0.77±0.01 | 0.89±0.01 |
+| spike | 1.00±0.00 | 0.32±0.27 | 1.00±0.00 | 1.00±0.00 |
+| freeze | 0.98±0.01 | 0.52±0.40 | 0.99±0.00 | 0.99±0.00 |
+| stale_replay | 0.94±0.01 | 0.24±0.19 | 0.99±0.02 | 0.94±0.01 |
+| slow_bias | 0.85±0.09 | 0.00±0.00 | 0.00±0.00 | 0.85±0.09 |
+| evasion | 0.06±0.08 | 0.00±0.00 | 0.00±0.00 | 0.06±0.08 |
+| noise | 0.32±0.07 | 0.18±0.16 | 0.58±0.18 | 0.34±0.07 |
+| sawtooth | 0.89±0.02 | 0.04±0.04 | 0.04±0.04 | 0.89±0.02 |
+| zero_fault | 1.00±0.00 | 0.44±0.45 | 1.00±0.00 | 1.00±0.00 |
+| false-alarm rate (all runs) | 0.0002±0.0001 | 0.0001±0.0001 | 0.0009±0.0007 | 0.0007±0.0002 |
+
+AI cost (autoencoder): training 0.93 s once, scoring 14 us per message
+
+### T6: automatic response (isolate a sensor after 15 alerts in its last 50 messages)
+| attack | bad messages accepted, no response | bad messages accepted, with response | attacked sensor isolated (runs) | clean sensors wrongly isolated (all runs) |
+|---|---|---|---|---|
+| bias | 2 | 0 | 5/5 | 0 |
+| drift | 32 | 32 | 5/5 | 0 |
+| slow_bias | 44 | 24 | 5/5 | 0 |
+| noise | 199 | 46 | 5/5 | 0 |
+| evasion | 281 | 256 | 2/5 | 0 |
+
+### T7: silent message loss (messages dropped by the attacker vs gaps counted by the receiver)
+| attack | messages dropped (mean) | gaps detected (mean) | runs where all gaps were seen |
+|---|---|---|---|
+| mitm_drop | 60 | 60 | 10/10 |
+
+Audit log: intact -> chain+seal valid: True. After rewriting an entry and ALL hashes: chain valid: True, seal valid: False
+
+Total time: 795 s
